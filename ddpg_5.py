@@ -85,13 +85,13 @@ class ddpg_agent(object):
 
 		c = Can()
 		
-		c.add(d(inputdims,400))
+		c.add(d(inputdims,800))
 		c.add(rect)
 		
-		c.add(d(400,200))
+		c.add(d(800,400))
 		c.add(rect)
 		
-		c.add(Dense(200,outputdims,stddev=1))
+		c.add(Dense(400,outputdims,stddev=1))
 
 		
 		c.add(Act('tanh'))
@@ -117,12 +117,12 @@ class ddpg_agent(object):
 		concat = Lambda(lambda x:tf.concat(x,axis=1))
 
 		
-		den0 = c.add(d(inputdims, 400))
+		den0 = c.add(d(inputdims, 800))
 		
-		den1 = c.add(d(400 + actiondims, 200))
-		den2 = c.add(d(200,100))
-		den2a = c.add(d(100,50))
-		den3 = c.add(Dense(50,1,stddev=1))
+		den1 = c.add(d(800 + actiondims, 400))
+		den2 = c.add(d(400,200))
+		den2a = c.add(d(200,100))
+		den3 = c.add(Dense(100,1,stddev=1))
 
 		def call(i):
 			state = i[0]
@@ -380,7 +380,10 @@ if __name__=='__main__':
 
 	env = RunEnv(visualize=False)
 
+	env.change_model(model='2D', prosthetic=True, difficulty=0, seed=None)
+
 	observation_d = env.reset(project = False)
+
 	observation = process_obs_dict(observation_d)
 	obs_size = observation.shape[0]
 	print(obs_size)
@@ -410,9 +413,9 @@ if __name__=='__main__':
 
 	
 
-	noise_level = 0.8
+	noise_level = 0.55
 	noise_decay_rate = 0.005
-	noise_floor = 0
+	noise_floor = 0.0001
 	noiseless = 0.0001
 
 	# Where does the noise process come in...
@@ -483,12 +486,12 @@ if __name__=='__main__':
 	def load_memory():
 		agent.rpm.load('rpm.pickle')
 
-	def test():
+	def test(frameskip = 1):
 
 		env = RunEnv(visualize=False)
 
 		observation_d = env.reset(project = False)
-		observation = process_obs_dict(observation_d)
+		#observation = process_obs_dict(observation_d)
 
 
 		total_reward = 0
@@ -497,13 +500,16 @@ if __name__=='__main__':
 		while True:
 
 			#a = AGENT OUTPUT
+			observation = process_obs_dict(observation_d)
 			a, q = agent.act(observation)
 
-			observation_d, reward, done, info = env.step(a, project = False)
-			observation = process_obs_dict(observation_d)
+			for _ in range(frameskip):
 
-			total_reward += reward 
-			steps += 1
+				observation_d, reward, done, info = env.step(a, project = False)
+				#observation = process_obs_dict(observation_d)
+
+				total_reward += reward 
+				steps += 1
 
 			#print(observation)
 
@@ -515,7 +521,7 @@ if __name__=='__main__':
 
 		print('finished testing!')
 
-	def upload():
+	def upload(frameskip = 1):
 
 		from osim.http.client import Client
 
@@ -526,6 +532,7 @@ if __name__=='__main__':
 		remote_base = "http://grader.crowdai.org:1729"
 		crowdai_token = apikey
 
+		print('connecting...')
 		client = Client(remote_base)
 
 		observation_d = client.env_create(crowdai_token, env_id="ProstheticsEnv")
@@ -550,43 +557,47 @@ if __name__=='__main__':
 			#obs_collect.append(observation)
 			#a_collect.append(a)
 
-			[observation_d, reward, done, info] = client.env_step(a, True)
-			
+			for _ in range(frameskip):
 
-			stepno += 1
-			total_reward += reward
-
-			print('step',stepno,'total reward',total_reward)
-
-			if done:
-
-				'''
-				print('')
-				print('saving...')
-				print('')
-
-				with open('upload_saves/upload_a_collect_' + str(epino) + '.p', 'wb') as f:
-
-					pickle.dump(a_collect, f)
-
-				with open('upload_saves/upload_obs_collect_' + str(epino) + '.p', 'wb') as f:
-
-					pickle.dump(obs_collect, f)
-				'''
-
-				observation_d = client.env_reset()
+				[observation_d, reward, done, info] = client.env_step(a, True)
 				
- 
-				print('>> episode',epino,' Done after',stepno,'got reward:',total_reward)
-				print('')
 
-				total_reward = 0
-				stepno = 0
-				epino += 1
+				stepno += 1
+				total_reward += reward
 
-				if not observation_d:
+				print('step',stepno,'total reward',total_reward)
+
+				if done:
+
+					'''
+					print('')
+					print('saving...')
+					print('')
+
+					with open('upload_saves/upload_a_collect_' + str(epino) + '.p', 'wb') as f:
+
+						pickle.dump(a_collect, f)
+
+					with open('upload_saves/upload_obs_collect_' + str(epino) + '.p', 'wb') as f:
+
+						pickle.dump(obs_collect, f)
+					'''
+
+					observation_d = client.env_reset()
+					
+	 
+					print('>> episode',epino,' Done after',stepno,'got reward:',total_reward)
+					print('')
+
+					total_reward = 0
+					stepno = 0
+					epino += 1
 
 					break
+
+			if not observation_d:
+
+				break
 
 		print('Done! Submitting...')
 		client.submit()
